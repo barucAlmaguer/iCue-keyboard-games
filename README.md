@@ -22,6 +22,10 @@ export OPENRGB_PORT=6742
 cargo run -- typing --wpm=20
 ```
 
+```
+cargo run -- wordle
+```
+
 Controls:
 - Type the words before they expire (no Enter required)
 - Backspace to correct mistakes

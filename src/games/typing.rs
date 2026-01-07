@@ -144,7 +144,11 @@ fn parse_wpm(value: &str) -> Result<f32, String>
     Ok(parsed)
 }
 
-pub fn run_with_config(keyboard: &mut Keyboard, config: TypingConfig) -> Result<(), String>
+pub fn run_with_config(
+    mut keyboard: Option<&mut Keyboard>,
+    device_name: &str,
+    config: TypingConfig,
+) -> Result<(), String>
 {
     let mut term = TerminalGuard::enter().map_err(|err| err.to_string())?;
     let mut rng = rand::thread_rng();
@@ -217,12 +221,14 @@ pub fn run_with_config(keyboard: &mut Keyboard, config: TypingConfig) -> Result<
         }
 
         if last_tick.elapsed() >= Duration::from_millis(TICK_MS) {
-            let leds = build_leds(keyboard, &words, lives, now)?;
-            keyboard.set_leds(&leds)?;
+            if let Some(kbd) = keyboard.as_deref_mut() {
+                let leds = build_leds(Some(&*kbd), &words, lives, now)?;
+                kbd.set_leds(&leds)?;
+            }
 
             draw_ui(
                 term.stdout(),
-                keyboard.device_name(),
+                device_name,
                 &words,
                 &buffer,
                 &stats,
@@ -242,12 +248,14 @@ pub fn run_with_config(keyboard: &mut Keyboard, config: TypingConfig) -> Result<
 
     draw_summary(
         term.stdout(),
-        keyboard.device_name(),
+        device_name,
         &stats,
         start.elapsed().min(LEVEL_DURATION),
         lives,
     )?;
-    set_finish_leds(keyboard, lives)?;
+    if let Some(kbd) = keyboard.as_deref_mut() {
+        set_finish_leds(kbd, lives)?;
+    }
     wait_for_exit()?;
     Ok(())
 }
@@ -352,10 +360,11 @@ fn draw_ui(
     lines.push("KB Games - Fast Typing".to_string());
     lines.push(format!("Keyboard: {}", device_model));
     lines.push(format!(
-        "Time left: {:>5.1}s  Lives: {}/{}  On screen: {}  Start WPM: {:>4.0}",
+        "Time left: {:>5.1}s  Lives: {}/{}  {}  On screen: {}  Start WPM: {:>4.0}",
         time_left,
         lives,
         START_LIVES,
+        render_hearts(lives),
         words.len(),
         start_wpm
     ));
@@ -450,7 +459,7 @@ fn draw_summary(
     lines.push(String::new());
     lines.push(format!("Keyboard: {}", device_model));
     lines.push(format!("Duration: {:>5.1}s", elapsed.as_secs_f32()));
-    lines.push(format!("Lives left: {}", lives));
+    lines.push(format!("Lives left: {}  {}", lives, render_hearts(lives)));
     lines.push(format!("Words typed: {}", stats.words_typed));
     lines.push(format!("Words missed: {}", stats.words_missed));
     lines.push(format!("WPM: {:>5.1}", compute_wpm(stats.words_typed, elapsed)));
@@ -515,13 +524,17 @@ fn compute_accuracy(words_typed: u32, words_missed: u32) -> f32
 }
 
 fn build_leds(
-    keyboard: &Keyboard,
+    keyboard: Option<&Keyboard>,
     words: &[Word],
     lives: u8,
     now: Instant,
 ) -> Result<Vec<LedColor>, String>
 {
     let mut map: HashMap<u32, (Rgb, f32)> = HashMap::new();
+
+    let Some(keyboard) = keyboard else {
+        return Ok(Vec::new());
+    };
 
     for word in words {
         let age = now.saturating_duration_since(word.spawned_at);
@@ -670,6 +683,14 @@ fn render_row(row: &[Cell]) -> String
         line.push_str("\x1b[0m");
     }
     line
+}
+
+fn render_hearts(lives: u8) -> String
+{
+    if lives == 0 {
+        return "no hearts".to_string();
+    }
+    "❤️".repeat(lives as usize)
 }
 
 fn ansi_color(color: Rgb) -> String
